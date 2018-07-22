@@ -50,7 +50,8 @@ class CommandResult(BaseCommandResult):
             self.__spooled_lines.append(line)
 
     def _feed_error(self, error):
-        self.set_exception(error)
+        if not self.done():
+            self.set_exception(error)
 
 class CommandResultIterable(BaseCommandResult):
     """Variant of CommandResult where the underlying callback is an
