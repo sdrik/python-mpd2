@@ -119,6 +119,43 @@ class TestAsyncioMPD(unittest.TestCase):
             'volume': '70',
             })
 
+    def assertAllExceptionRetrieved(self, future):
+        e = []
+        def exception_handler(loop, ctx):
+            if 'exception' in ctx:
+                    e.append(ctx['exception'])
+                    return
+            loop.default_exception_handler(ctx)
+
+        self.loop.set_exception_handler(exception_handler)
+        self._await(future)
+        self.loop.set_exception_handler(None)
+        assert (not e), 'Task exception(s) never retrieved: %s' % str(e)
+
+    def test_missed_exception_disconnect(self):
+        """Does a client disconnect during idle is leaking exceptions?"""
+        self.init_client()
+
+        self.mockserver.expect_exchange([b"idle \"database\"\n"], [])
+        self._await(asyncio.sleep(self.client.IMMEDIATE_COMMAND_TIMEOUT))
+        self.client.disconnect()
+        self.assertAllExceptionRetrieved(asyncio.sleep(0))
+
+    def test_missed_exception_direct_commands(self):
+        """Does a error during a direct command is leaking exceptions?"""
+        self.init_client()
+
+        async def await_playlistid():
+            try:
+                await self.client.playlistid(1)
+            except:
+                pass
+
+        self.mockserver.expect_exchange([b"playlistid \"1\"\n"], [b"ACK [50@0] {} No such song\n"])
+        self.mockserver.expect_exchange([b"idle \"database\"\n"], [])
+        task = asyncio.ensure_future(await_playlistid())
+        self.assertAllExceptionRetrieved(asyncio.sleep(.1))
+
     def test_mocker(self):
         """Does the mock server refuse unexpected writes?"""
         self.init_client()
